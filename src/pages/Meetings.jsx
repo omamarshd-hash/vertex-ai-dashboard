@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, Clock, Video, CheckCircle, XCircle, Plus } from 'lucide-react';
-import { fetchStats, fetchLogs } from '../utils/api';
+import { fetchMeetings } from '../utils/api';
 
 const statusColors = {
   scheduled: { bg: '#dcfce7', text: '#166534', label: 'Scheduled', icon: CheckCircle },
