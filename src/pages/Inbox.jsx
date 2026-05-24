@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Search, Bell, SlidersHorizontal, Bot, Calendar, Check, User, Mail, MapPin, Sparkles, Clock } from 'lucide-react';
-import { fetchStats, fetchLogs } from '../utils/api';
+import React, { useEffect, useState, useRef } from 'react';
+import { Search, Bell, SlidersHorizontal, Bot, Calendar, Check, User, Mail, Sparkles, Clock } from 'lucide-react';
+import { fetchConversations } from '../utils/api';
+import axios from 'axios';
+
+const GOVERNOR_URL = process.env.REACT_APP_GOVERNOR_URL || 'https://governor-ai-1odr.onrender.com';
 
 const platformColors = {
   instagram: { bg: '#fce7f3', text: '#9d174d', label: 'Instagram' },
@@ -16,8 +19,46 @@ const urgencyColors = {
   low: { bg: '#f3f4f6', text: '#6b7280', label: 'Low' },
 };
 
-function getInitials(str) {
-  return str?.split(/[\s@]/)[0]?.slice(0, 2).toUpperCase() || 'UN';
+// Cache for resolved usernames
+const nameCache = {};
+
+async function resolveUsername(platform, user_id) {
+  if (!user_id) return user_id;
+  // If email, return as-is
+  if (user_id.includes('@')) return user_id;
+  // If not numeric, return as-is
+  if (!/^\d+$/.test(user_id)) return user_id;
+  // Check cache
+  const cacheKey = `${platform}-${user_id}`;
+  if (nameCache[cacheKey]) return nameCache[cacheKey];
+
+  try {
+    const res = await axios.post(`${GOVERNOR_URL}/utils/resolve_user`, { platform, user_id });
+    const name = res.data.name || user_id;
+    nameCache[cacheKey] = name;
+    return name;
+  } catch {
+    return user_id;
+  }
+}
+
+function getDisplayName(user_id, platform, resolvedNames) {
+  if (!user_id) return 'Unknown';
+  if (user_id.includes('@')) return user_id;
+  const cacheKey = `${platform}-${user_id}`;
+  if (resolvedNames[cacheKey]) return resolvedNames[cacheKey];
+  if (/^\d+$/.test(user_id)) {
+    return `${platformColors[platform]?.label || 'User'} (${user_id.slice(-4)})`;
+  }
+  return user_id;
+}
+
+function getInitials(name) {
+  if (!name) return 'UN';
+  if (name.includes('@')) return name.slice(0, 2).toUpperCase();
+  const parts = name.split(' ');
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
 }
 
 function getUrgency(msg) {
@@ -45,31 +86,65 @@ export default function Inbox({ filterPlatform = '' }) {
   const [filter, setFilter] = useState(filterPlatform || 'all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [resolvedNames, setResolvedNames] = useState({});
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    fetchConversations('', 100)
-      .then(r => {
+    fetchConversations('', 200)
+      .then(async r => {
         const grouped = {};
-        (r.data.conversations || []).forEach(msg => {
+        const allMsgs = (r.data.conversations || []).sort(
+          (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+        );
+        allMsgs.forEach(msg => {
           const key = `${msg.platform}-${msg.user_id}`;
-          if (!grouped[key]) grouped[key] = { ...msg, messages: [] };
+          if (!grouped[key]) grouped[key] = {
+            ...msg,
+            messages: [],
+            latest_timestamp: msg.timestamp
+          };
           grouped[key].messages.push(msg);
+          grouped[key].latest_timestamp = msg.timestamp;
+          grouped[key].message = msg.message;
         });
         const list = Object.values(grouped).sort((a, b) =>
-          new Date(b.timestamp) - new Date(a.timestamp)
+          new Date(b.latest_timestamp) - new Date(a.latest_timestamp)
         );
         setConversations(list);
         if (list.length > 0) setSelected(list[0]);
+
+        // Resolve usernames for Instagram and Facebook
+        const newNames = {};
+        await Promise.all(
+          list
+            .filter(c => ['instagram', 'facebook'].includes(c.platform) && /^\d+$/.test(c.user_id))
+            .map(async c => {
+              const cacheKey = `${c.platform}-${c.user_id}`;
+              const name = await resolveUsername(c.platform, c.user_id);
+              newNames[cacheKey] = name;
+            })
+        );
+        if (Object.keys(newNames).length > 0) {
+          setResolvedNames(prev => ({ ...prev, ...newNames }));
+        }
       })
       .catch(() => setConversations([]))
       .finally(() => setLoading(false));
   }, []);
 
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [selected]);
+
   const filters = ['all', 'whatsapp', 'instagram', 'facebook', 'gmail'];
 
   const filtered = conversations.filter(c => {
     const matchPlatform = filter === 'all' || c.platform === filter;
-    const matchSearch = !search || c.user_id.toLowerCase().includes(search.toLowerCase()) || c.message?.toLowerCase().includes(search.toLowerCase());
+    const displayName = getDisplayName(c.user_id, c.platform, resolvedNames).toLowerCase();
+    const matchSearch = !search ||
+      displayName.includes(search.toLowerCase()) ||
+      c.message?.toLowerCase().includes(search.toLowerCase());
     return matchPlatform && matchSearch;
   });
 
@@ -81,7 +156,6 @@ export default function Inbox({ filterPlatform = '' }) {
     <div className="flex h-full">
       {/* Conversation list */}
       <div className="w-72 flex flex-col border-r border-black/7 flex-shrink-0 bg-white">
-        {/* Header */}
         <div className="px-4 py-3 border-b border-black/7 flex items-center gap-2">
           <h2 className="text-[15px] font-medium text-gray-900 flex-1">Inbox</h2>
           <div className="w-7 h-7 rounded-lg border border-black/8 flex items-center justify-center cursor-pointer hover:bg-gray-50">
@@ -92,7 +166,6 @@ export default function Inbox({ filterPlatform = '' }) {
           </div>
         </div>
 
-        {/* Search */}
         <div className="px-3 py-2 border-b border-black/7">
           <div className="flex items-center gap-2 bg-gray-50 border border-black/8 rounded-lg px-3 py-1.5">
             <Search size={13} color="#9ca3af" />
@@ -105,7 +178,6 @@ export default function Inbox({ filterPlatform = '' }) {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="px-3 py-2 border-b border-black/7 flex gap-1.5 flex-wrap">
           {filters.map(f => (
             <button
@@ -121,7 +193,6 @@ export default function Inbox({ filterPlatform = '' }) {
           ))}
         </div>
 
-        {/* List */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="p-4 text-center text-sm text-gray-400">Loading...</div>
@@ -133,6 +204,7 @@ export default function Inbox({ filterPlatform = '' }) {
               const pColor = platformColors[c.platform] || platformColors.unknown;
               const urg = getUrgency(c.message);
               const uColor = urgencyColors[urg];
+              const displayName = getDisplayName(c.user_id, c.platform, resolvedNames);
               return (
                 <div
                   key={i}
@@ -140,18 +212,17 @@ export default function Inbox({ filterPlatform = '' }) {
                   className={`px-3 py-3 cursor-pointer border-b border-black/5 flex gap-2.5 transition-all
                     ${isSelected ? 'bg-gradient-to-r from-teal-50 to-blue-50 border-l-2 border-l-teal-400' : 'hover:bg-gray-50'}`}
                 >
-                  {c.role === 'user' && <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#00c9a7,#0066ff)' }} />}
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-medium text-white flex-shrink-0"
                     style={{ background: getAvatarColor(c.user_id) }}
                   >
-                    {getInitials(c.user_id)}
+                    {getInitials(c.user_id, c.platform)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-[13px] font-medium text-gray-900 truncate">{c.user_id}</span>
+                      <span className="text-[13px] font-medium text-gray-900 truncate">{displayName}</span>
                       <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">
-                        {new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(c.latest_timestamp || c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <p className="text-[12px] text-gray-500 truncate mb-1">{c.message}</p>
@@ -173,10 +244,10 @@ export default function Inbox({ filterPlatform = '' }) {
           <>
             <div className="px-5 py-3 bg-white border-b border-black/7 flex items-center gap-3">
               <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium" style={{ background: getAvatarColor(selected.user_id) }}>
-                {getInitials(selected.user_id)}
+                {getInitials(getDisplayName(selected.user_id, selected.platform, resolvedNames))}
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">{selected.user_id}</p>
+                <p className="text-sm font-medium text-gray-900">{getDisplayName(selected.user_id, selected.platform, resolvedNames)}</p>
                 <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: pc.bg, color: pc.text }}>{pc.label}</span>
               </div>
               <div className="ml-auto flex gap-2">
@@ -189,10 +260,13 @@ export default function Inbox({ filterPlatform = '' }) {
               </div>
             </div>
 
+            {/* Messages - sorted oldest to newest, scroll to bottom */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {(selected.messages || [selected]).map((msg, i) => (
+              {(selected.messages || [selected])
+                .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                .map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'assistant' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-xs px-3 py-2 rounded-xl text-[13px] ${
+                  <div className={`max-w-xs lg:max-w-sm px-3 py-2 rounded-xl text-[13px] ${
                     msg.role === 'assistant'
                       ? 'gradient-bg text-white rounded-br-sm'
                       : 'bg-white border border-black/8 text-gray-800 rounded-bl-sm'
@@ -204,6 +278,7 @@ export default function Inbox({ filterPlatform = '' }) {
                   </div>
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="px-4 py-3 bg-white border-t border-black/7 flex items-center gap-2">
@@ -221,21 +296,20 @@ export default function Inbox({ filterPlatform = '' }) {
         )}
       </div>
 
-      {/* Right panel */}
-      <div className="w-64 bg-white border-l border-black/7 flex flex-col overflow-y-auto flex-shrink-0">
+      {/* Right panel - hidden on small screens */}
+      <div className="hidden xl:flex w-64 bg-white border-l border-black/7 flex-col overflow-y-auto flex-shrink-0">
         {selected && (
           <>
-            {/* Client info */}
             <div className="p-4 border-b border-black/7">
               <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1">
                 <User size={11} /> Client info
               </p>
               <div className="flex items-center gap-2.5 mb-3">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium" style={{ background: getAvatarColor(selected.user_id) }}>
-                  {getInitials(selected.user_id)}
+                  {getInitials(getDisplayName(selected.user_id, selected.platform, resolvedNames))}
                 </div>
                 <div>
-                  <p className="text-[13px] font-medium text-gray-900">{selected.user_id}</p>
+                  <p className="text-[13px] font-medium text-gray-900">{getDisplayName(selected.user_id, selected.platform, resolvedNames)}</p>
                   <p className="text-[11px] text-gray-400">{platformColors[selected.platform]?.label}</p>
                 </div>
               </div>
@@ -250,7 +324,6 @@ export default function Inbox({ filterPlatform = '' }) {
               </div>
             </div>
 
-            {/* AI suggestions */}
             <div className="p-4 border-b border-black/7">
               <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1">
                 <Sparkles size={11} /> AI suggestions
@@ -274,7 +347,6 @@ export default function Inbox({ filterPlatform = '' }) {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="p-4 space-y-2">
               <button className="gradient-bg text-white text-[12px] px-3 py-2 rounded-lg w-full flex items-center gap-2 font-medium">
                 <Bot size={14} /> Generate AI reply
