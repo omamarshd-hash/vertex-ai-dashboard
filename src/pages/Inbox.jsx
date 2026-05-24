@@ -94,7 +94,7 @@ export default function Inbox({ filterPlatform = '' }) {
       .then(async r => {
         const grouped = {};
         const allMsgs = (r.data.conversations || []).sort(
-          (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+          (a, b) => (a.id || 0) - (b.id || 0)
         );
         allMsgs.forEach(msg => {
           const key = `${msg.platform}-${msg.user_id}`;
@@ -263,21 +263,30 @@ export default function Inbox({ filterPlatform = '' }) {
             {/* Messages - sorted oldest to newest, scroll to bottom */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {(selected.messages || [selected])
-                .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-                .map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'assistant' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-xs lg:max-w-sm px-3 py-2 rounded-xl text-[13px] ${
-                    msg.role === 'assistant'
-                      ? 'gradient-bg text-white rounded-br-sm'
-                      : 'bg-white border border-black/8 text-gray-800 rounded-bl-sm'
-                  }`}>
-                    {msg.message}
-                    <p className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-white/60' : 'text-gray-400'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                .sort((a, b) => (a.id || 0) - (b.id || 0))
+                .map((msg, i) => {
+                  const isAssistant = msg.role === 'assistant';
+                  return (
+                    <div key={i} className={`flex ${isAssistant ? 'justify-end' : 'justify-start'}`}>
+                      {!isAssistant && (
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-medium mr-2 flex-shrink-0 mt-1"
+                          style={{ background: getAvatarColor(selected.user_id) }}>
+                          {getInitials(getDisplayName(selected.user_id, selected.platform, resolvedNames))}
+                        </div>
+                      )}
+                      <div className={`max-w-xs lg:max-w-sm px-3 py-2 rounded-xl text-[13px] ${
+                        isAssistant
+                          ? 'gradient-bg text-white rounded-br-sm'
+                          : 'bg-white border border-black/8 text-gray-800 rounded-bl-sm'
+                      }`}>
+                        {msg.message}
+                        <p className={`text-[10px] mt-1 ${isAssistant ? 'text-white/60' : 'text-gray-400'}`}>
+                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               <div ref={messagesEndRef} />
             </div>
 
