@@ -89,6 +89,12 @@ export default function Inbox({ filterPlatform = '' }) {
   const [resolvedNames, setResolvedNames] = useState({});
   const messagesEndRef = useRef(null);
 
+  // Update filter when filterPlatform prop changes
+  useEffect(() => {
+    setFilter(filterPlatform || 'all');
+    setSelected(null);
+  }, [filterPlatform]);
+
   useEffect(() => {
     fetchConversations('', 200)
       .then(async r => {
@@ -103,15 +109,19 @@ export default function Inbox({ filterPlatform = '' }) {
             messages: [],
             latest_timestamp: msg.timestamp
           };
+          // Show all messages in chat thread
           grouped[key].messages.push(msg);
           grouped[key].latest_timestamp = msg.timestamp;
-          grouped[key].message = msg.message;
+          // Use latest USER message as preview
+          if (msg.role === 'user') {
+            grouped[key].message = msg.message;
+          }
         });
         const list = Object.values(grouped).sort((a, b) =>
           new Date(b.latest_timestamp) - new Date(a.latest_timestamp)
         );
         setConversations(list);
-        if (list.length > 0) setSelected(list[0]);
+        // Don't auto-select — user should click a conversation
 
         // Resolve usernames for Instagram and Facebook
         const newNames = {};

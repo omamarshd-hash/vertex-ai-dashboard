@@ -4,6 +4,15 @@ const GOVERNOR_URL = process.env.REACT_APP_GOVERNOR_URL || 'https://governor-ai-
 
 const api = axios.create({ baseURL: GOVERNOR_URL, timeout: 30000 });
 
+// Attach JWT token to every request
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export const fetchConversations = (platform = '', limit = 50) =>
   api.get('/dashboard/conversations', { params: { platform, limit } });
 

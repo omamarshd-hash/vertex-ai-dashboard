@@ -8,6 +8,7 @@ import Analytics from './pages/Analytics';
 import AIAssistant from './pages/AIAssistant';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import Onboarding from './pages/Onboarding';
 import './index.css';
 
 function PlatformInbox({ platform }) {
@@ -32,25 +33,14 @@ function ProtectedLayout({ user, onLogout }) {
   return (
     <div className="flex h-screen overflow-hidden">
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
-
-      <div className={`
-        fixed lg:relative z-30 h-full transition-transform duration-200
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
+      <div className={`fixed lg:relative z-30 h-full transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <Sidebar user={user} onLogout={onLogout} onClose={() => setSidebarOpen(false)} />
       </div>
-
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-black/7">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="w-8 h-8 rounded-lg border border-black/10 flex items-center justify-center"
-          >
+          <button onClick={() => setSidebarOpen(true)} className="w-8 h-8 rounded-lg border border-black/10 flex items-center justify-center">
             <span className="text-lg">☰</span>
           </button>
           <div className="flex items-center gap-2">
@@ -60,7 +50,6 @@ function ProtectedLayout({ user, onLogout }) {
             <span className="font-medium text-sm text-gray-900">Vertex AI</span>
           </div>
         </div>
-
         <main className="flex-1 overflow-y-auto bg-gray-50">
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -85,22 +74,46 @@ function ProtectedLayout({ user, onLogout }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
     const token = localStorage.getItem('token');
     if (stored && token) {
-      setUser(JSON.parse(stored));
+      const u = JSON.parse(stored);
+      setUser(u);
+      // Show onboarding if not complete
+      if (!u.onboarding_complete) {
+        setShowOnboarding(true);
+      }
     }
     setLoading(false);
   }, []);
 
-  const handleLogin = (userData) => setUser(userData);
+  const handleLogin = (userData) => {
+    setUser(userData);
+    // New users see onboarding
+    if (!userData.onboarding_complete) {
+      setShowOnboarding(true);
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      const u = JSON.parse(stored);
+      u.onboarding_complete = true;
+      localStorage.setItem('user', JSON.stringify(u));
+      setUser(u);
+    }
+    setShowOnboarding(false);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    setShowOnboarding(false);
   };
 
   if (loading) {
@@ -111,15 +124,23 @@ export default function App() {
     );
   }
 
-  return (
-    <BrowserRouter>
-      {!user ? (
+  if (!user) {
+    return (
+      <BrowserRouter>
         <Routes>
           <Route path="*" element={<Login onLogin={handleLogin} />} />
         </Routes>
-      ) : (
-        <ProtectedLayout user={user} onLogout={handleLogout} />
-      )}
+      </BrowserRouter>
+    );
+  }
+
+  if (showOnboarding) {
+    return <Onboarding user={user} onComplete={handleOnboardingComplete} />;
+  }
+
+  return (
+    <BrowserRouter>
+      <ProtectedLayout user={user} onLogout={handleLogout} />
     </BrowserRouter>
   );
 }
