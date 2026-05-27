@@ -11,10 +11,6 @@ import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import './index.css';
 
-function PlatformInbox({ platform }) {
-  return <Inbox filterPlatform={platform} />;
-}
-
 function ComingSoon({ name }) {
   return (
     <div className="flex-1 flex items-center justify-center flex-col gap-3 text-gray-400 p-8">
@@ -25,6 +21,10 @@ function ComingSoon({ name }) {
       <p className="text-sm">Coming soon</p>
     </div>
   );
+}
+
+function PlatformInbox({ platform }) {
+  return <Inbox filterPlatform={platform} />;
 }
 
 function ProtectedLayout({ user, onLogout }) {
@@ -82,7 +82,6 @@ export default function App() {
     if (stored && token) {
       const u = JSON.parse(stored);
       setUser(u);
-      // Show onboarding if not complete
       if (!u.onboarding_complete) {
         setShowOnboarding(true);
       }
@@ -92,7 +91,6 @@ export default function App() {
 
   const handleLogin = (userData) => {
     setUser(userData);
-    // New users see onboarding
     if (!userData.onboarding_complete) {
       setShowOnboarding(true);
     }
@@ -118,7 +116,8 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(160deg, #0a1628, #0d2d3a, #0a2518)' }}>
+      <div className="min-h-screen flex items-center justify-center"
+        style={{ background: 'linear-gradient(160deg, #0a1628, #0d2d3a, #0a2518)' }}>
         <div className="text-white text-sm">Loading...</div>
       </div>
     );

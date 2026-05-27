@@ -31,6 +31,18 @@ export default function Settings() {
     axios.get(`${GOVERNOR_URL}/test_accounts/list`, { headers })
       .then(r => setTestAccounts(r.data.test_accounts || []))
       .catch(() => {});
+
+    // Handle OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('oauth_success')) {
+      // Reload platforms after OAuth
+      setTimeout(() => {
+        axios.get(`${GOVERNOR_URL}/platforms/list`, { headers })
+          .then(r => setPlatforms(r.data.platforms || []))
+          .catch(() => {});
+      }, 1000);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const handleSave = async () => {
@@ -166,8 +178,19 @@ export default function Settings() {
       </Section>
 
       <Section icon={Globe} title="Connected platforms">
+        {/* OAuth Connect Button */}
+        <button onClick={async () => {
+          try {
+            const res = await axios.get(`${GOVERNOR_URL}/oauth/facebook/url`, { headers });
+            window.location.href = res.data.url;
+          } catch { alert('Failed to start connection'); }
+        }}
+          className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-[#1877F2] text-white rounded-xl text-sm font-medium mb-4 hover:bg-[#166fe5] transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          Connect Facebook & Instagram
+        </button>
         {platforms.length === 0 ? (
-          <p className="text-sm text-gray-400">No platforms connected yet.</p>
+          <p className="text-sm text-gray-400">No platforms connected yet. Click above to connect.</p>
         ) : (
           platforms.map((p, i) => (
             <div key={i} className="flex items-center justify-between py-2.5 border-b border-black/5 last:border-0">

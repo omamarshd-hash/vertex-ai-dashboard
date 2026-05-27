@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, Calendar, Users, Zap, TrendingUp, Clock } from 'lucide-react';
+import { MessageSquare, Calendar, Users, Zap, TrendingUp, Clock, AlertTriangle, CheckCircle, ArrowRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { fetchStats, fetchLogs } from '../utils/api';
+import axios from 'axios';
+
+const GOVERNOR_URL = process.env.REACT_APP_GOVERNOR_URL || 'https://governor-ai-1odr.onrender.com';
 
 const activityData = [
   { day: 'Mon', messages: 24, meetings: 3 },
@@ -35,16 +38,75 @@ function StatCard({ icon: Icon, label, value, sub, color }) {
   );
 }
 
+function VerificationBanner({ status, onConfirm }) {
+  const token = localStorage.getItem('token');
+
+  if (status === 'verified') return (
+    <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+      <CheckCircle size={18} color="#16a34a" />
+      <div className="flex-1">
+        <p className="text-sm font-medium text-green-800">Meta Business Verified ✅</p>
+        <p className="text-xs text-green-600">Your bot is live — all users can message you now.</p>
+      </div>
+    </div>
+  );
+
+  if (status === 'submitted') return (
+    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+      <div className="flex items-center gap-3 mb-3">
+        <AlertTriangle size={18} color="#d97706" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-yellow-800">Meta Verification Pending ⏳</p>
+          <p className="text-xs text-yellow-600">You submitted your verification. Meta usually takes 24–48 hours. Only test accounts can message your bot until verified.</p>
+        </div>
+      </div>
+      <button onClick={async () => {
+        try {
+          await axios.post(`${GOVERNOR_URL}/meta/verification/confirm`, {}, { headers: { Authorization: `Bearer ${token}` } });
+          const user = JSON.parse(localStorage.getItem('user') || '{}');
+          user.meta_verified = true;
+          user.meta_verification_status = 'verified';
+          localStorage.setItem('user', JSON.stringify(user));
+          onConfirm();
+        } catch {}
+      }} className="text-xs font-medium text-yellow-700 underline">
+        Meta confirmed my verification →
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
+      <AlertTriangle size={18} color="#2563eb" />
+      <div className="flex-1">
+        <p className="text-sm font-medium text-blue-800">Complete your setup</p>
+        <p className="text-xs text-blue-600">Verify your business with Meta and connect your platforms to activate your AI bot.</p>
+      </div>
+      <a href="/settings" className="flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 px-3 py-1.5 rounded-lg">
+        Setup <ArrowRight size={12} />
+      </a>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({ total_messages: 0, total_meetings: 0, total_users: 0, upcoming_meetings: 0 });
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [verificationStatus, setVerificationStatus] = useState('not_started');
 
   useEffect(() => {
-    Promise.all([fetchStats(), fetchLogs(10)])
-      .then(([s, l]) => {
+    const token = localStorage.getItem('token');
+    Promise.all([
+      fetchStats(),
+      fetchLogs(10),
+      axios.get(`${GOVERNOR_URL}/meta/verification/status`, { headers: { Authorization: `Bearer ${token}` } })
+    ])
+      .then(([s, l, v]) => {
         setStats(s.data);
         setLogs(l.data.logs || []);
+        if (v.data.meta_verified) setVerificationStatus('verified');
+        else setVerificationStatus(v.data.meta_verification_status || 'not_started');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -63,6 +125,9 @@ export default function Dashboard() {
         <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-0.5">Overview of your AI communication system</p>
       </div>
+
+      {/* Verification Banner */}
+      <VerificationBanner status={verificationStatus} onConfirm={() => setVerificationStatus('verified')} />
 
       {/* Stat cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
